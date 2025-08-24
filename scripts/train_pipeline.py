@@ -1,5 +1,5 @@
 # scripts/train_pipeline.py
-import argparse, os, torch
+import argparse, os, torch, warnings
 from torch.optim import AdamW
 
 from sigrid.models.unet import build_unet
@@ -7,6 +7,13 @@ from sigrid.models.fcn import build_fcn
 from sigrid.data.dataset import SIGridDataset
 from sigrid.data.transforms import setup_transforms
 from sigrid.train.trainer import make_loader, train_one_epoch, evaluate
+
+# Best-available default: CUDA > MPS > CPU
+DEVICE_DEFAULT = (
+    "cuda" if torch.cuda.is_available()
+    else "mps" if getattr(torch.backends, "mps", None) and torch.backends.mps.is_available()
+    else "cpu"
+)
 
 def parse_args():
     ap = argparse.ArgumentParser(description="Train on SIGrid dataset.")
@@ -31,8 +38,9 @@ def parse_args():
     ap.add_argument("--batch_size", type=int, default=16)
     ap.add_argument("--epochs", type=int, default=10)
     ap.add_argument("--lr", type=float, default=1e-3)
-    ap.add_argument("--no_amp", action="store_true")
-    ap.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
+    ap.add_argument("--no_amp", action="store_true")  
+    ap.add_argument("--device", type=str, default=DEVICE_DEFAULT, help="Device to run on: 'cuda', 'mps', or 'cpu'. Defaults to best available."
+)
 
     # eval options
     ap.add_argument("--eval_every", type=int, default=1, help="run eval every N epochs")
@@ -44,6 +52,23 @@ def parse_args():
 
 def main():
     args = parse_args()
+    # Validate requested device & set AMP policy
+    if args.device == "cuda":
+        if not torch.cuda.is_available():
+            raise RuntimeError("CUDA requested but not available.")
+        use_amp = not args.no_amp  # CUDA AMP is supported
+    elif args.device == "mps":
+        if not (getattr(torch.backends, "mps", None) and torch.backends.mps.is_available()):
+            raise RuntimeError("MPS requested but not available on this system.")
+        use_amp = False  # no CUDA AMP on MPS
+        if not args.no_amp:
+            warnings.warn("AMP disabled on MPS (not supported). Running in FP32.", RuntimeWarning)
+    else:
+        # CPU
+        use_amp = False
+        if not args.no_amp:
+            warnings.warn("AMP disabled on CPU. Running in FP32.", RuntimeWarning)
+    
     os.environ.setdefault("SIGRID_CACHE", args.cache_root or f"./artifacts/{args.dataset}/cache")
 
     features = {k: True for k in args.features.split(",") if k}
@@ -87,7 +112,7 @@ def main():
     # Simple train loop with periodic eval on the *same* split.
     # If you want a held-out split, run generate_sigrids for train+test and point --images/--masks to the test dirs for eval.
     for e in range(1, args.epochs + 1):
-        loss = train_one_epoch(model, loader, optim, device=args.device, use_amp=not args.no_amp)
+        loss = train_one_epoch(model, loader, optim, device=args.device, use_amp=use_amp)
         print(f"[Epoch {e}/{args.epochs}] train_loss={loss:.6f}")
 
         if args.eval_every and (e % args.eval_every == 0):
