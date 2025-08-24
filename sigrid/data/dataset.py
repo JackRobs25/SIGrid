@@ -117,7 +117,7 @@ class SIGridDataset(Dataset):
 
             # Build SIGrid via pipeline
             proc = MergingImageProcessor(
-                img_path=img_path,
+                image_path=img_path,
                 n_segments=self.n_segments,
                 compactness=self.compactness,
                 merge_threshold=(max_dim / 80.0),
