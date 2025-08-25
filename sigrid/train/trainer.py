@@ -8,6 +8,7 @@ from torch.cuda.amp import autocast, GradScaler
 from torch.utils.data import DataLoader
 from sklearn.metrics import jaccard_score, fbeta_score
 import torchvision.transforms.functional as TF
+from tqdm import tqdm
 
 __all__ = ["train_one_epoch", "evaluate", "make_loader"]
 
@@ -164,8 +165,9 @@ def train_one_epoch(model, loader, optimizer, device, use_amp: bool = True, scal
 
     total_loss = 0.0
     num_batches = 0
+    loop = tqdm(loader)
 
-    for sigs, sig_masks, _slics, _maps, _idx in loader:
+    for batch_idx, (sigs, sig_masks, _slics, _maps, _idx) in enumerate(loop):
         sigs = sigs.to(device)
         sig_masks = sig_masks.float().unsqueeze(1).to(device)  # BxHxW -> Bx1xHxW
         valid = (sig_masks != -1)
@@ -185,5 +187,7 @@ def train_one_epoch(model, loader, optimizer, device, use_amp: bool = True, scal
 
         total_loss += float(loss.detach().cpu())
         num_batches += 1
+
+        loop.set_postfix(loss=loss.item())
 
     return total_loss / max(1, num_batches)
