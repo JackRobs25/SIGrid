@@ -126,7 +126,6 @@ class SIGridDataset(Dataset):
             proc.compute_superpixels_and_merge(fast=True)
             discarded = proc.create_grid(
                 self.grid_size,
-                optimized=True,
                 use_avg_col=self.features.get("avg", False),
                 use_height=self.features.get("height", False),
                 use_width=self.features.get("width", False),

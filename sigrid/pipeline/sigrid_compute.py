@@ -200,7 +200,6 @@ class MergingImageProcessor:
     def create_grid(
         self,
         fixed_n,
-        optimized,
         use_avg_col=True,
         use_height=True,
         use_width=True,
@@ -241,82 +240,78 @@ class MergingImageProcessor:
                 feature_slices[name] = slice(idx, idx + size)
                 idx += size
 
-        if optimized:
-            labels_flat = torch.tensor(self.segments_slic.flatten(), dtype=torch.long)
-            if use_avg_col:
-                img_tensor = torch.tensor(self.img.reshape(-1, 3), dtype=torch.float32)
-                avg_colors = scatter(img_tensor, labels_flat, dim=0, reduce='mean')
+        labels_flat = torch.tensor(self.segments_slic.flatten(), dtype=torch.long)
+        if use_avg_col:
+            img_tensor = torch.tensor(self.img.reshape(-1, 3), dtype=torch.float32)
+            avg_colors = scatter(img_tensor, labels_flat, dim=0, reduce='mean')
 
-            if use_width or use_height:
-                y_coords, x_coords = torch.meshgrid(
-                    torch.arange(img_height), torch.arange(img_width), indexing='ij'
-                )
-                x_coords = x_coords.flatten().to(torch.float32)
-                y_coords = y_coords.flatten().to(torch.float32)
+        if use_width or use_height:
+            y_coords, x_coords = torch.meshgrid(
+                torch.arange(img_height), torch.arange(img_width), indexing='ij'
+            )
+            x_coords = x_coords.flatten().to(torch.float32)
+            y_coords = y_coords.flatten().to(torch.float32)
 
-            if use_width:
-                x_max = scatter(x_coords, labels_flat, dim=0, reduce='max')
-                x_min = scatter(x_coords, labels_flat, dim=0, reduce='min')
-                widths = (x_max - x_min) / img_width
+        if use_width:
+            x_max = scatter(x_coords, labels_flat, dim=0, reduce='max')
+            x_min = scatter(x_coords, labels_flat, dim=0, reduce='min')
+            widths = (x_max - x_min) / img_width
 
-            if use_height:
-                y_max = scatter(y_coords, labels_flat, dim=0, reduce='max')
-                y_min = scatter(y_coords, labels_flat, dim=0, reduce='min')
-                heights = (y_max - y_min) / img_height
+        if use_height:
+            y_max = scatter(y_coords, labels_flat, dim=0, reduce='max')
+            y_min = scatter(y_coords, labels_flat, dim=0, reduce='min')
+            heights = (y_max - y_min) / img_height
 
-            if use_area:
-                ones = torch.ones_like(labels_flat, dtype=torch.float32)
-                areas = scatter(ones, labels_flat, dim=0, reduce='sum')
-                total_pixels = img_height * img_width
-                normalized_areas = areas / total_pixels
+        if use_area:
+            ones = torch.ones_like(labels_flat, dtype=torch.float32)
+            areas = scatter(ones, labels_flat, dim=0, reduce='sum')
+            total_pixels = img_height * img_width
+            normalized_areas = areas / total_pixels
 
-            # Label list, centroids
-            labels = np.arange(1, self.segments_slic.max() + 1)
-            ones_np = np.ones_like(self.segments_slic, dtype=np.uint8)
-            centroids = center_of_mass(ones_np, labels=self.segments_slic, index=labels)
-            centroids = np.array(centroids)
-            centroids_y, centroids_x = centroids[:, 0], centroids[:, 1]
+        # Label list, centroids
+        labels = np.arange(1, self.segments_slic.max() + 1)
+        ones_np = np.ones_like(self.segments_slic, dtype=np.uint8)
+        centroids = center_of_mass(ones_np, labels=self.segments_slic, index=labels)
+        centroids = np.array(centroids)
+        centroids_y, centroids_x = centroids[:, 0], centroids[:, 1]
 
-            grid_rows = np.clip((centroids_y // grid_height).astype(int), 0, fixed_n - 1)
-            grid_cols = np.clip((centroids_x // grid_width).astype(int), 0, fixed_n - 1)
+        grid_rows = np.clip((centroids_y // grid_height).astype(int), 0, fixed_n - 1)
+        grid_cols = np.clip((centroids_x // grid_width).astype(int), 0, fixed_n - 1)
 
-            self.sp_label_grid[grid_rows, grid_cols] = labels
+        self.sp_label_grid[grid_rows, grid_cols] = labels
 
-            coords = np.stack([grid_rows, grid_cols], axis=1)
-            _, counts = np.unique(coords, axis=0, return_counts=True)
-            discarded = int(np.sum(counts - 1))
+        coords = np.stack([grid_rows, grid_cols], axis=1)
+        _, counts = np.unique(coords, axis=0, return_counts=True)
+        discarded = int(np.sum(counts - 1))
 
-            if use_avg_col:
-                self.grid[grid_rows, grid_cols, feature_slices['avg_col']] = avg_colors[labels].numpy()
-            if use_area:
-                self.grid[grid_rows, grid_cols, feature_slices['area']] = normalized_areas[labels].numpy().reshape(-1, 1)
-            if use_width:
-                self.grid[grid_rows, grid_cols, feature_slices['width']] = widths[labels].numpy().reshape(-1, 1)
-            if use_height:
-                self.grid[grid_rows, grid_cols, feature_slices['height']] = heights[labels].numpy().reshape(-1, 1)
-            if use_hu:
-                assignment = torch.tensor(self.segments_slic, dtype=torch.int32)
-                hu, orig_ids, _centroids = hu_moments_from_labels_pytorch(assignment)
-                self.grid[grid_rows, grid_cols, feature_slices['hu']] = hu.detach().cpu().numpy()
+        if use_avg_col:
+            self.grid[grid_rows, grid_cols, feature_slices['avg_col']] = avg_colors[labels].numpy()
+        if use_area:
+            self.grid[grid_rows, grid_cols, feature_slices['area']] = normalized_areas[labels].numpy().reshape(-1, 1)
+        if use_width:
+            self.grid[grid_rows, grid_cols, feature_slices['width']] = widths[labels].numpy().reshape(-1, 1)
+        if use_height:
+            self.grid[grid_rows, grid_cols, feature_slices['height']] = heights[labels].numpy().reshape(-1, 1)
+        if use_hu:
+            assignment = torch.tensor(self.segments_slic, dtype=torch.int32)
+            hu, orig_ids, _centroids = hu_moments_from_labels_pytorch(assignment)
+            self.grid[grid_rows, grid_cols, feature_slices['hu']] = hu.detach().cpu().numpy()
 
-            if use_compac or use_solidity or use_eccentricity:
-                regions = regionprops(self.segments_slic)
-                for region in regions:
-                    y, x = region.centroid
-                    grid_row = min(int(y // grid_height), fixed_n - 1)
-                    grid_col = min(int(x // grid_width), fixed_n - 1)
-                    if use_compac:
-                        normalised_compactness = ((region.perimeter ** 2) / (4 * np.pi * region.area)) * (region.area / (img_height * img_width)) if region.area > 0 else 0
-                        self.grid[grid_row, grid_col, feature_slices['compactness']] = normalised_compactness
-                    if use_solidity:
-                        self.grid[grid_row, grid_col, feature_slices['solidity']] = region.solidity
-                    if use_eccentricity:
-                        self.grid[grid_row, grid_col, feature_slices['eccentricity']] = region.eccentricity
+        if use_compac or use_solidity or use_eccentricity:
+            regions = regionprops(self.segments_slic)
+            for region in regions:
+                y, x = region.centroid
+                grid_row = min(int(y // grid_height), fixed_n - 1)
+                grid_col = min(int(x // grid_width), fixed_n - 1)
+                if use_compac:
+                    normalised_compactness = ((region.perimeter ** 2) / (4 * np.pi * region.area)) * (region.area / (img_height * img_width)) if region.area > 0 else 0
+                    self.grid[grid_row, grid_col, feature_slices['compactness']] = normalised_compactness
+                if use_solidity:
+                    self.grid[grid_row, grid_col, feature_slices['solidity']] = region.solidity
+                if use_eccentricity:
+                    self.grid[grid_row, grid_col, feature_slices['eccentricity']] = region.eccentricity
 
-            return discarded
-
-        # (Non-optimized branch retained from your code; omitted here for brevity in demo repos)
-        raise NotImplementedError("Set optimized=True in create_grid()")
+        return discarded
 
 def compute_fixed_n_for_dataset(image_dirs, n_segments, compactness, merge_threshold=5, sigma=1):
     print("\n📏 Computing fixed grid size (n) from all images...")
