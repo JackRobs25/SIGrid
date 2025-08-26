@@ -9,7 +9,7 @@ def parse_args():
     ap.add_argument("--output", required=True, help="Where to save cached SIGrids (e.g., artifacts/CUB/cache)")
     ap.add_argument("--dataset", default="CUB")
     ap.add_argument("--n_segments", type=int, default=500)
-    ap.add_argument("--compactness", type=float, default=10.0)
+    ap.add_argument("--compactness", type=int, default=20)
     ap.add_argument("--grid", type=int, default=96)
     ap.add_argument("--features", default="avg", help="Comma list: avg,area,width,height,compac,solidity,eccentricity,hu")
     return ap.parse_args()
