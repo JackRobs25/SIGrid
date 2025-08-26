@@ -6,7 +6,6 @@ from torch.utils.data import Dataset
 from tqdm import tqdm
 from skimage import io
 
-# Import pipeline processors (you'll paste real implementations later)
 from sigrid.pipeline.sigrid_compute import MergingImageProcessor, MaskProcessor
 
 __all__ = ["SIGridDataset"]
@@ -55,7 +54,6 @@ class SIGridDataset(Dataset):
         # Channel suffix for cache key
         channel_suffix = "_".join([k for k, v in self.features.items() if v]) or "none"
         suffix = f"{self.n_segments}_{self.compactness}_{self.grid_size}_{self.mode}_{channel_suffix}"
-
         self.sig_path = os.path.join(self.cache_root, f"sig_list_{suffix}.pt")
         self.sig_mask_path = os.path.join(self.cache_root, f"sig_mask_list_{suffix}.pt")
         self.slic_path = os.path.join(self.cache_root, f"slic_list_{suffix}.npz")

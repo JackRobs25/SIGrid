@@ -1,6 +1,7 @@
 # scripts/train_pipeline.py
 import argparse, os, torch, warnings
 from torch.optim import AdamW
+from albumentations import Compose
 
 from sigrid.models.unet import build_unet
 from sigrid.models.fcn import build_fcn
@@ -18,12 +19,14 @@ DEVICE_DEFAULT = (
 def parse_args():
     ap = argparse.ArgumentParser(description="Train on SIGrid dataset.")
     ap.add_argument("--dataset", default="CUB")
-    ap.add_argument("--images", required=True)
-    ap.add_argument("--masks", required=True)
+    ap.add_argument("--train_images", required=True)
+    ap.add_argument("--train_masks", required=True)
+    ap.add_argument("--test_images", required=True)
+    ap.add_argument("--test_masks", required=True)
     ap.add_argument("--cache_root", default=None)
 
     ap.add_argument("--n_segments", type=int, default=500)
-    ap.add_argument("--compactness", type=float, default=10.0)
+    ap.add_argument("--compactness", type=int, default=20)
     ap.add_argument("--grid", type=int, default=96)
     ap.add_argument("--features", default="avg")
 
@@ -43,8 +46,7 @@ def parse_args():
 )
 
     # eval options
-    ap.add_argument("--eval_every", type=int, default=1, help="run eval every N epochs")
-    ap.add_argument("--translate_cells", action="store_true", help="translate grid preds back to pixels for eval")
+    ap.add_argument("--eval_every", type=int, default=5, help="run eval every N epochs")
     ap.add_argument("--save_preds_dir", default=None, help="optional directory to dump a few predictions")
     ap.add_argument("--save_first_n", type=int, default=0, help="how many preds to save")
 
@@ -82,15 +84,29 @@ def main():
         n_segments=args.n_segments,
         compactness=args.compactness,
         grid_size=args.grid,
-        image_dir=args.images,
-        mask_dir=args.masks,
+        image_dir=args.train_images,
+        mask_dir=args.train_masks,
         spatial_transform=spatial_t,      # augments on train
         norm_transform=norm_t,
         features=features,
         cache_root=args.cache_root,
     )
+
+    ds_test = SIGridDataset(
+        dataset_name=args.dataset,
+        n_segments=args.n_segments,
+        compactness=args.compactness,
+        grid_size=args.grid,
+        image_dir=args.test_images,
+        mask_dir=args.test_masks,
+        spatial_transform=Compose([]),     
+        norm_transform=norm_t,
+        features=features,
+        cache_root=args.cache_root,
+    )
     # loader
-    loader = make_loader(ds_train, batch_size=args.batch_size, shuffle=True)
+    train_loader = make_loader(ds_train, batch_size=args.batch_size, shuffle=True)
+    test_loader = make_loader(ds_test, batch_size=args.batch_size, shuffle=True)
 
     # derive channels from first cached sample
     channels = int(ds_train.sig_list[0].shape[0])
@@ -112,19 +128,41 @@ def main():
     # Simple train loop with periodic eval on the *same* split.
     # If you want a held-out split, run generate_sigrids for train+test and point --images/--masks to the test dirs for eval.
     for e in range(1, args.epochs + 1):
-        loss = train_one_epoch(model, loader, optim, device=args.device, use_amp=use_amp)
+        loss = train_one_epoch(model, train_loader, optim, device=args.device, use_amp=use_amp)
         print(f"[Epoch {e}/{args.epochs}] train_loss={loss:.6f}")
 
         if args.eval_every and (e % args.eval_every == 0):
-            avg_loss, c_iou, c_f, c_acc, p_iou, p_f, p_acc = evaluate(
-                model, loader, device=args.device,
-                translate_cells_to_pixels=args.translate_cells,
+            avg_train_loss, c_train_iou, c_train_f, c_train_acc, p_train_iou, p_train_f, p_train_acc = evaluate(
+                model, train_loader, device=args.device, testing=False,
+                translate_cells_to_pixels=False,
+                save_preds_dir=None,
+                save_first_n=0,
+            )
+            avg_test_loss, c_test_iou, c_test_f, c_test_acc, p_test_iou, p_test_f, p_test_acc = evaluate(
+                model, test_loader, device=args.device, testing=True,
+                translate_cells_to_pixels=False,
+                save_preds_dir=None,
+                save_first_n=0,
+            )
+            print(f"[Eval e={e}] "
+                f"Train: loss={avg_train_loss:.4f}, "
+                f"cell_acc={c_train_acc:.2f}%, cell_iou={c_train_iou:.2f}%, cell_fβ={c_train_f:.2f}%, "
+                f"pixel_acc={p_train_acc:.2f}%, pixel_iou={p_train_iou:.2f}%, pixel_fβ={p_train_f:.2f}% | "
+                f"Test: loss={avg_test_loss:.4f}, "
+                f"cell_acc={c_test_acc:.2f}%, cell_iou={c_test_iou:.2f}%, cell_fβ={c_test_f:.2f}%, "
+                f"pixel_acc={p_test_acc:.2f}%, pixel_iou={p_test_iou:.2f}%, pixel_fβ={p_test_f:.2f}%")
+    
+    avg_test_loss, c_test_iou, c_test_f, c_test_acc, p_test_iou, p_test_f, p_test_acc = evaluate(
+                model, test_loader, device=args.device, testing=True,
+                translate_cells_to_pixels=True,
                 save_preds_dir=args.save_preds_dir,
                 save_first_n=args.save_first_n,
-            )
-            print(f"[Eval e={e}] loss={avg_loss:.4f}  "
-                  f"cell_acc={c_acc:.2f}%  cell_iou={c_iou:.2f}%  cell_fβ={c_f:.2f}%  "
-                  f"pixel_acc={p_acc:.2f}%  pixel_iou={p_iou:.2f}%  pixel_fβ={p_f:.2f}%")
+            )      
+    print(f"[Eval e={e}] "
+                f"Test: loss={avg_test_loss:.4f}, "
+                f"cell_acc={c_test_acc:.2f}%, cell_iou={c_test_iou:.2f}%, cell_fβ={c_test_f:.2f}%, "
+                f"pixel_acc={p_test_acc:.2f}%, pixel_iou={p_test_iou:.2f}%, pixel_fβ={p_test_f:.2f}%")
+    
 
 if __name__ == "__main__":
     main()

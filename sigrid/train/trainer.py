@@ -20,7 +20,7 @@ def _collate_keep_maps(batch):
     idxs = torch.tensor(idxs, dtype=torch.long)
     return sigs, masks, list(slics), list(maps), idxs
 
-def make_loader(dataset, batch_size: int = 8, shuffle: bool = True, num_workers: int = 4):
+def make_loader(dataset, batch_size: int = 32, shuffle: bool = True, num_workers: int = 1):
     return DataLoader(dataset, batch_size=batch_size, shuffle=shuffle,
                       num_workers=num_workers, pin_memory=True, collate_fn=_collate_keep_maps)
 
@@ -29,6 +29,7 @@ def evaluate(
     model: torch.nn.Module,
     loader: DataLoader,
     device: str,
+    testing: bool = True,
     translate_cells_to_pixels: bool = False,
     save_preds_dir: Optional[str] = None,
     save_first_n: int = 0,
@@ -147,7 +148,9 @@ def evaluate(
     else:
         pixel_acc = pixel_iou = pixel_f = -1.0
 
-    model.train()
+    if not testing:
+        model.train()
+        
     return avg_loss, cell_iou, cell_f, cell_acc, pixel_iou, pixel_f, pixel_acc
 
 
