@@ -15,7 +15,6 @@ from sigrid.data.dataset import SIGridDataset
 from sigrid.data.transforms import setup_transforms
 from sigrid.train.trainer import make_loader, train_one_epoch, evaluate
 
-# Best-available default: CUDA > MPS > CPU
 DEVICE_DEFAULT = (
     "cuda" if torch.cuda.is_available()
     else "mps" if getattr(torch.backends, "mps", None) and torch.backends.mps.is_available()
@@ -84,7 +83,6 @@ def main():
 
     features = {k: True for k in args.features.split(",") if k}
 
-    # provisional transforms; normalization="none" because SIGrid channels are not [0..255]
     spatial_t, norm_t = setup_transforms(channels=1, normalize="unit255")
 
     # Dataset
@@ -165,7 +163,8 @@ def main():
         ).to(args.device)
 
     state.network = model
-    # ---- SAFE TORCHINFO SUMMARY ----
+
+    # Print torch model summary
     try:
         input_shape = (1, channels, args.grid, args.grid)
         model_for_summary = copy.deepcopy(model).to("cpu")  # isolate & keep summary on CPU
@@ -180,8 +179,6 @@ def main():
 
     optim = AdamW(model.parameters(), lr=args.lr, weight_decay=1e-4)
 
-    # Simple train loop with periodic eval on the *same* split.
-    # If you want a held-out split, run generate_sigrids for train+test and point --images/--masks to the test dirs for eval.
     for e in range(1, args.epochs + 1):
         loss = train_one_epoch(model, train_loader, optim, device=args.device, use_amp=use_amp)
         state.train_losses.append(float(loss))

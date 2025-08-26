@@ -70,7 +70,6 @@ def evaluate(
         num_batches += 1
 
         probs = torch.sigmoid(logits)
-        # mirror original behavior using torch.where with on-device constants
         preds = torch.where(probs < 0.5, torch.tensor(0.0, device=probs.device), probs)
         preds = torch.where(preds >= 0.5, torch.tensor(1.0, device=probs.device), preds)
 
@@ -150,7 +149,7 @@ def evaluate(
 
     if not testing:
         model.train()
-        
+
     return avg_loss, cell_iou, cell_f, cell_acc, pixel_iou, pixel_f, pixel_acc
 
 
