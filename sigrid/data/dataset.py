@@ -120,7 +120,7 @@ class SIGridDataset(Dataset):
                 image_path=img_path,
                 n_segments=self.n_segments,
                 compactness=self.compactness,
-                merge_threshold=(max_dim / 80.0),
+                merge_threshold=(max_dim / self.grid_size),
             )
             proc.img = transformed_img
             proc.compute_superpixels_and_merge(fast=True)

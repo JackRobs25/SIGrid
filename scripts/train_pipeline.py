@@ -74,7 +74,7 @@ def main():
     features = {k: True for k in args.features.split(",") if k}
 
     # provisional transforms; normalization="none" because SIGrid channels are not [0..255]
-    spatial_t, norm_t = setup_transforms(channels=1, normalize="none")
+    spatial_t, norm_t = setup_transforms(channels=1, normalize="unit255")
 
     # Dataset
     ds_train = SIGridDataset(

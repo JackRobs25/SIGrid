@@ -69,59 +69,68 @@ def evaluate(
         num_batches += 1
 
         probs = torch.sigmoid(logits)
-        preds = (probs >= 0.5).float()
+        # mirror original behavior using torch.where with on-device constants
+        preds = torch.where(probs < 0.5, torch.tensor(0.0, device=probs.device), probs)
+        preds = torch.where(preds >= 0.5, torch.tensor(1.0, device=probs.device), preds)
 
         # cell metrics
         preds_flat = preds[mask_valid].cpu().flatten()
         y_flat = sig_masks[mask_valid].cpu().flatten()
+
+        assert np.isin(y_flat.numpy(), [0, 1]).all(), f"y_flat contains values other than 0 and 1: {np.unique(y_flat)}"
+        assert np.isin(preds_flat.numpy(), [0, 1]).all(), f"preds_flat contains values other than 0 and 1: {np.unique(preds_flat)}"
+
         num_correct_cells += (preds_flat == y_flat).sum().item()
         num_cells += preds_flat.numel()
-
-        # sanity
-        assert np.isin(y_flat.numpy(), [0, 1]).all()
-        assert np.isin(preds_flat.numpy(), [0, 1]).all()
 
         cell_iou_scores.append(jaccard_score(y_flat, preds_flat, average="macro"))
         cell_f_scores.append(fbeta_score(y_flat, preds_flat, beta=0.3))
 
         if translate_cells_to_pixels:
-            # translate each sample in batch
+            # translate each sample in batch using the original mapping procedure
             for b in range(sigs.size(0)):
-                pred_b = preds[b, 0]  # HxW (grid)
+                pred = preds[b]  # (1,H,W) logits already binarized to 0/1
                 slic_b = np.asarray(slics[b], dtype=np.int64)
                 map_b = np.asarray(maps[b], dtype=np.int64)
 
-                # project grid predictions onto superpixel ids present in map grid
+                # ensure 2D [H,W]
+                if pred.dim() == 3:
+                    pred = pred.squeeze(0)
+
+                # active cells and corresponding superpixel labels
                 active = (map_b != -1)
-                label_ids = map_b[active]                   # superpixel label per active grid cell
-                pred_cells = pred_b[active].to(torch.uint8) # 0/1 per active grid cell
+                # torch index tensor for labels on same device as pred
+                label_idx_t = torch.from_numpy(map_b[active].astype(np.int64)).to(pred.device)
+                pred_vec = pred[active].to(torch.uint8)  # 0/1 per active cell
 
-                # Build lookup table: max label + 1
-                lut = torch.zeros(int(slic_b.max()) + 1, dtype=torch.uint8, device=pred_cells.device)
-                lut[label_ids] = pred_cells * 255
+                # build mapping (superpixel_label -> 0/255) on device
+                max_label = int(slic_b.max())
+                mapping = torch.zeros(max_label + 1, dtype=torch.uint8, device=pred.device)
+                mapping[label_idx_t] = (pred_vec * 255).to(torch.uint8)
 
-                translated_px = lut[slic_b]                 # HxW, values {0,255}
-                bin_px = (translated_px // 255).to(torch.uint8).cpu().numpy()
+                # apply mapping to slic to get per-pixel prediction
+                slic_t = torch.from_numpy(slic_b.astype(np.int64)).to(pred.device)
+                translated_pixels = mapping[slic_t].detach().cpu()       # uint8 in {0,255}
+                binary_pixels = (translated_pixels // 255).to(torch.uint8).numpy()  # {0,1}
 
-                # Load GT mask path from dataset using the same rules as dataset._mask_path_for
+                # load GT and threshold like original code
                 img_path = loader.dataset.images[int(idxs[b])]
                 gt = _load_gt_mask_like_dataset(img_path, dataset_name=getattr(loader.dataset, "dataset_name", "CUB"))
-
-                # binarize GT (like your code: >175)
                 gt_bin = (gt > 175).astype(np.uint8)
 
-                num_correct_pixels += (gt_bin == bin_px).sum().item()
+                # accumulate pixel metrics
+                num_correct_pixels += (gt_bin == binary_pixels).sum().item()
                 num_pixels += gt_bin.size
 
-                pixel_iou_scores.append(jaccard_score(gt_bin.flatten(), bin_px.flatten(), average="macro"))
-                pixel_f_scores.append(fbeta_score(gt_bin.flatten(), bin_px.flatten(), beta=0.3))
+                pixel_iou_scores.append(jaccard_score(gt_bin.flatten(), binary_pixels.flatten(), average='macro'))
+                pixel_f_scores.append(fbeta_score(gt_bin.flatten(), binary_pixels.flatten(), beta=0.3))
 
+                # optional saving
                 if save_preds_dir and saved < save_first_n:
-                    # save translated prediction and GT
-                    TF.to_pil_image(torch.tensor(translated_px).cpu().to(torch.uint8)).save(
+                    TF.to_pil_image(translated_pixels.to(torch.uint8)).save(
                         os.path.join(save_preds_dir, f"pred_{saved}.png")
                     )
-                    TF.to_pil_image(torch.tensor(gt_bin * 255).cpu().to(torch.uint8)).save(
+                    TF.to_pil_image(torch.tensor(gt_bin * 255, dtype=torch.uint8)).save(
                         os.path.join(save_preds_dir, f"gt_{saved}.png")
                     )
                     saved += 1
