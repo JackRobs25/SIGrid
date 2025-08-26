@@ -181,11 +181,10 @@ def train_one_epoch(model, loader, optimizer, device, use_amp: bool = True, scal
         sig_masks = sig_masks.float().unsqueeze(1).to(device)  # BxHxW -> Bx1xHxW
         valid = (sig_masks != -1)
 
-        with autocast(enabled=use_amp):
-            logits = model(sigs)
-            loss = F.binary_cross_entropy_with_logits(logits[valid], sig_masks[valid])
+        logits = model(sigs)
+        loss = F.binary_cross_entropy_with_logits(logits[valid], sig_masks[valid])
 
-        optimizer.zero_grad(set_to_none=True)
+        optimizer.zero_grad()
         if use_amp:
             scaler.scale(loss).backward()
             scaler.step(optimizer)

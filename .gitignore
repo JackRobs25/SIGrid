@@ -1,2 +1,4 @@
 data/
 artifacts/
+hpc_cache/
+scripts/compare_sigrids.py
