@@ -3,6 +3,7 @@ import argparse, os, torch, warnings
 from torch.optim import AdamW
 from albumentations import Compose
 from torchinfo import summary
+import copy
 
 from sigrid.models.unet import build_unet
 from sigrid.models.fcn import build_fcn
@@ -123,7 +124,12 @@ def main():
             requires_grad=True,
         ).to(args.device)
 
-    summary(model, input_size=(1, channels, args.grid, args.grid))
+    # ---- SAFE TORCHINFO SUMMARY ----
+    try:
+        model_for_summary = copy.deepcopy(model).to("cpu")  # isolate & keep summary on CPU
+        summary(model_for_summary, input_size=(1, channels, args.grid, args.grid))
+    finally:
+        del model_for_summary
 
     optim = AdamW(model.parameters(), lr=args.lr, weight_decay=1e-4)
 
