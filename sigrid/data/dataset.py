@@ -63,8 +63,8 @@ class SIGridDataset(Dataset):
         all_exist = all(os.path.exists(p) for p in [self.sig_path, self.sig_mask_path, self.slic_path, self.map_path])
         if all_exist:
             print(f"✅ Loading cached SIGrid data: {self.sig_path}")
-            self.sig_list = torch.load(self.sig_path)
-            self.sig_mask_list = torch.load(self.sig_mask_path)
+            self.sig_list = torch.load(self.sig_path, weights_only=False)
+            self.sig_mask_list = torch.load(self.sig_mask_path, weights_only=False)
 
             slic_npz = np.load(self.slic_path)
             map_npz = np.load(self.map_path)

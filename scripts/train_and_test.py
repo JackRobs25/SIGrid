@@ -2,6 +2,7 @@
 import argparse, os, torch, warnings
 from torch.optim import AdamW
 from albumentations import Compose
+from torchinfo import summary
 
 from sigrid.models.unet import build_unet
 from sigrid.models.fcn import build_fcn
@@ -35,7 +36,6 @@ def parse_args():
                 choices=["vgg_light3","vgg11","vgg13","vgg16","vgg19"])
     ap.add_argument("--fcn_pretrained", action="store_true",
                 help="use torchvision VGG weights (only if channels==3 and not vgg_light3)")
-    ap.add_argument("--model", default="full", choices=["full","reduced"])   # unet-only
     ap.add_argument("--downsample", default="pool", choices=["pool","stride"])  # unet-only
 
     ap.add_argument("--batch_size", type=int, default=16)
@@ -113,7 +113,7 @@ def main():
 
     # Model
     if args.arch == "unet":
-        model = build_unet(input_channels=channels, model=args.model, downsample=args.downsample).to(args.device)
+        model = build_unet(input_channels=channels, downsample=args.downsample).to(args.device)
     else:
         model = build_fcn(
             input_channels=channels,
@@ -122,6 +122,8 @@ def main():
             pretrained=args.fcn_pretrained,
             requires_grad=True,
         ).to(args.device)
+
+    summary(model, input_size=(1, channels, args.grid, args.grid))
 
     optim = AdamW(model.parameters(), lr=args.lr, weight_decay=1e-4)
 
