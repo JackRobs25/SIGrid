@@ -10,13 +10,20 @@ The project builds upon U-Net and FCN backbones, integrating superpixel-derived 
 ```
 SIGrid/
 ├── scripts/
-│   ├── generate_sigrids.py   # Precompute SIGrid representations
+│   ├── generate_sigrids.py   # Calls sigrid_compute functionality
 │   ├── train_and_test.py     # Train + evaluate UNet/FCN on SIGrids
 │   ├── save_data.py          # Save experiment metadata + model checkpoints
 ├── sigrid/
 │   ├── models/               # UNet and FCN implementations
-│   ├── data/                 # Dataset loaders, transforms
-│   ├── train/                # Trainer + evaluation utilities
+│   │   ├── unet.py
+│   │   ├── fcn.py
+│   ├── data/                 
+│   │   ├── dataset.py        # Dataset loaders
+│   │   ├── transforms.py     # Transforms
+│   ├── train/
+│   │   ├── trainer.py        # Trainer + evaluation utilities
+│   ├── pipeline/
+│   │   ├── sigrid_compute.py # Compute SIGrids
 ├── artifacts/                # (created at runtime) cache, results, predictions
 ├── data/                     # (ignored) raw datasets (e.g. CUB, DUTS, ECSSD, DUTS-OMRON)
 └── requirements.txt
